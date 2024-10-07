@@ -1,7 +1,7 @@
 <script lang="ts">
     import { Button } from '$lib/components/ui/button';
-	import * as Dialog from "$lib/components/ui/dialog";
-    import { PUBLIC_POCKETBASE_INSTANCE } from '$env/static/public';
+    import * as Dialog from "$lib/components/ui/dialog";
+    import { PUBLIC_POCKETBASE_INSTANCE, PUBLIC_R2_SUBDOMAIN } from '$env/static/public';
     import { goto } from '$app/navigation';
     import { enhance } from '$app/forms';
     import { toast } from 'svelte-sonner';
@@ -11,7 +11,7 @@
     const { user } = data;
     const superUser = user.superuser;
     let roomVideos;
-   $: roomVideos = data.roomVideos;
+    $: roomVideos = data.roomVideos;
     console.log(roomVideos);
     console.log(user);
     const sidebarItems = [
@@ -23,40 +23,9 @@
       { name: 'Option D' },
       { name: 'Option E' },
     ];
-  
-    async function deleteVideo(videoId: string) {
 
-        try {
-            const response = await fetch(`/api/videos/${videoId}`, {
-                method: 'DELETE',
-            });
-
-            if (response.ok) {
-                toast.success('Video deleted successfully');
-                await invalidateAll();
-            } else {
-                const errorData = await response.json();
-                toast.error(errorData.message || 'Failed to delete video');
-            }
-        } catch (error) {
-            console.error('Error deleting video:', error);
-            toast.error('An error occurred while deleting the video');
-        }
-    }
-
-    function handleDeleteResult(result) {
-        if (result.type === 'success') {
-            const data = result.data;
-            if (data.success) {
-                toast.success(data.message);
-                invalidateAll();
-            } else {
-                toast.error(data.message);
-            }
-        } else {
-            toast.error('An error occurred while deleting the video');
-        }
-    }
+    // Define your S3 bucket URL
+    const S3_BUCKET_URL = 'https://your-s3-bucket-url';
 </script>
 
 <div class="flex h-auto overflow-hidden bg-gray-100">
@@ -100,76 +69,83 @@
                         <div class="relative h-48 bg-gray-200 p-2 cursor-pointer">
                             <img src={`${PUBLIC_POCKETBASE_INSTANCE}/api/files/${video.collectionId}/${video.id}/${video.thumbnail}`} alt={video.title} class="w-full h-full object-cover" />
                             <div class="absolute inset-0 flex items-center justify-center">
-								<Dialog.Root>
-									<Dialog.Trigger>
-										<div class="w-12 h-12  bg-opacity-75 rounded-full flex items-center justify-center">
-											<img src="/icons/play.svg" alt="Play" class="w-10 h-10" />
-										  </div>
-									</Dialog.Trigger>
-									<Dialog.Content>
-									  <Dialog.Header>
-										<Dialog.Title class="text-primary py-4">{video.title}</Dialog.Title>
-										<Dialog.Description>
-										 <video src={`/video/${video.video_ref}.mp4`} class="w-full h-full object-cover"
-										 controls
-										 />
-										</Dialog.Description>
-									  </Dialog.Header>
-									  <Dialog.Footer class="flex justify-between">
-										<form
-										  action='/?/create-room'
-										  method='POST'
-										  use:enhance={() => {
-											return async ({ result }) => {
-												if (result.data.room?.name) {
-													currentVideoUrl.set(`/video/${video.video_ref}.mp4`);
-													toast.success('Room created successfully');
-													goto(`/room/${result.data.room.name}`);
-												} else if (result.status === 400) {
-													toast('Bad request');
-												} else if (result.status === 500) {
-													toast('Server error');
-												} else {
-													toast('Oops, something went wrong!');
-												}
-											};
-										}}
-									  >
-										<input 
-										  type="hidden" 
-										  name="videoUrl" 
-										  value={`/video/${video.video_ref}.mp4`}
-										/>
-										<Button 
-										  type="submit" 
-										  class="bg-primary hover:bg-primary/90 text-white"
-										>
-										  Proceed
-										</Button>
-									  </form>
-									  {#if superUser}
-										<form
-											action='/?/delete-video'
-											method='POST'
-											use:enhance={() => {
-												return async ({ result }) => {
-													handleDeleteResult(result);
-												};
-											}}
-										>
-											<input type="hidden" name="videoId" value={video.id} />
+                                <Dialog.Root>
+                                    <Dialog.Trigger>
+                                        <div class="w-12 h-12  bg-opacity-75 rounded-full flex items-center justify-center">
+                                            <img src="/icons/play.svg" alt="Play" class="w-10 h-10" />
+                                          </div>
+                                    </Dialog.Trigger>
+                                    <Dialog.Content>
+                                      <Dialog.Header>
+                                        <Dialog.Title class="text-primary py-4">{video.title}</Dialog.Title>
+                                        <Dialog.Description>
+                                         <video src={`${PUBLIC_R2_SUBDOMAIN}/${video.video_ref}`} class="w-full h-full object-cover"
+                                         controls
+                                         />
+                                        </Dialog.Description>
+                                      </Dialog.Header>
+                                      <Dialog.Footer class="flex justify-between">
+                                        <form
+                                          action='/?/create-room'
+                                          method='POST'
+                                          use:enhance={() => {
+                                            return async ({ result }) => {
+                                                if (result.data.room?.name) {
+                                                    currentVideoUrl.set(`${PUBLIC_R2_SUBDOMAIN}/${video.video_ref}`);
+                                                    toast.success('Room created successfully');
+                                                    goto(`/room/${result.data.room.name}`);
+                                                } else if (result.status === 400) {
+                                                    toast('Bad request');
+                                                } else if (result.status === 500) {
+                                                    toast('Server error');
+                                                } else {
+                                                    toast('Oops, something went wrong!');
+                                                }
+                                            };
+                                        }}
+                                      >
+                                        <input 
+                                          type="hidden" 
+                                          name="videoUrl" 
+                                          value={`${PUBLIC_R2_SUBDOMAIN}/${video.video_ref}`}
+                                        />
+                                        <Button 
+                                          type="submit" 
+                                          class="bg-primary hover:bg-primary/90 text-white"
+                                        >
+                                          Proceed
+                                        </Button>
+                                      </form>
+                                      {#if superUser}
+                                        <form
+                                            action='/upload/?/deleteVideo'
+                                            method='POST'
+                                            use:enhance={() => {
+                        return async ({ result }) => {
+                          if (result.status === 200) {
+                            toast.success('Video deleted successfully');
+                            await invalidateAll();
+                          } else {
+                            toast.error('Failed to delete video');
+                          }
+                        };
+                                            }}
+                                        >
+                                            <input type="hidden" name="id" value={video.id} />
+                                            <input type="hidden" name="ref" value={video.video_ref} />
+
                       <Button 
                       type="submit" 
                       class="bg-red-500 hover:bg-red-600 text-white"
                     >
                       Delete
                     </Button>
-										</form>
+                                        </form>
 
-									  {/if}
-									  </Dialog.Footer>
-									</Dialog.Content>
-								  </Dialog.Root>
+                                      {/if}
+                                      </Dialog.Footer>
+                                    </Dialog.Content>
+                                  </Dialog.Root>
                               
                             </div>
                         </div>
@@ -201,12 +177,29 @@
                                 <Button> Cancel </Button>
                               </Dialog.Close>
                               <Dialog.Close>
+                              <form
+                                action='/upload/?/deleteVideo'
+                                method='POST'
+                                use:enhance={() => {
+                                  return async ({ result }) => {
+                                    if (result.status === 200) {
+                                      toast.success('Video deleted successfully');
+                                      await invalidateAll();
+                                    } else {
+                                      toast.error('Failed to delete video');
+                                    }
+                                  };
+                                }}
+                              >
+                                <input type="hidden" name="id" value={video.id} />
+                                <input type="hidden" name="ref" value={video.video_ref} />
                                 <Button 
-                                on:click={() => deleteVideo(video.id)}
+                                type="submit"
                                 class="bg-red-500 hover:bg-red-600 text-white"
                               >
                                 Delete
                               </Button>
+                              </form>
                               </Dialog.Close>
                             </Dialog.Footer>
                           </Dialog.Content>

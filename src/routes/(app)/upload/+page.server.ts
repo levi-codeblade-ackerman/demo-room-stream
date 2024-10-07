@@ -1,6 +1,9 @@
 import { redirect, fail } from '@sveltejs/kit';
 import type { Actions } from './$types';
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFile, appendFile, rename, mkdir, unlink } from 'fs/promises';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { completeMultipartUpload, uploadSingleObject, deleteObject } from '../../../lib/cloudflareR2';
 
 export const load = async ({ locals }) => {
     const user = locals.pb.authStore.model;
@@ -19,9 +22,9 @@ export const load = async ({ locals }) => {
     return { user, representatives };
 };
 
-function checkFolder() {
-    if (!existsSync('static/video')) {
-        mkdirSync('static/video');
+async function ensureDir(dir: string) {
+    if (!existsSync(dir)) {
+        await mkdir(dir, { recursive: true });
     }
 }
 
@@ -35,14 +38,10 @@ export const actions: Actions = {
 
         const title = formData.get('title') as string;
         const desc = formData.get('desc') as string;
-
-        // Handle file uploads
-        const video = formData.get('video') as File | null;
+        const videoRef = formData.get('video_ref') as string;
         const thumbnail = formData.get('thumbnail') as File | null;
-
-        if (!video) {
-            return fail(400, { error: true, message: 'Video file is required' });
-        }
+        const uploadId = formData.get('uploadId') as string;
+        const parts = JSON.parse(formData.get('parts') as string);
 
         // Handle representatives
         const representativesString = formData.get('representatives') as string;
@@ -51,21 +50,8 @@ export const actions: Actions = {
         const data = new FormData();
         data.append('title', title);
         data.append('desc', desc);
-        // if (video) data.append('video', video);
-        let videoBuffer = await video.arrayBuffer();
-        let videoName = random_ref();
-        console.log('videoBuffer', videoBuffer);
-        if (thumbnail) data.append('thumbnail', thumbnail);
         representatives.forEach(rep => data.append('representatives', rep));
-
-        checkFolder();
-
-        try {
-            writeFileSync(`static/video/${videoName}.mp4`, Buffer.from(videoBuffer));
-        } catch (e) {
-            console.log(e);
-            return fail(500, { error: true, message: 'Failed to save video file' });
-        }
+        data.append('video_ref', videoRef);
 
         // Optional fields
         const name = formData.get('name');
@@ -74,20 +60,49 @@ export const actions: Actions = {
         if (name) data.append('name', name as string);
         if (phone) data.append('phone', phone as string);
         if (email) data.append('email', email as string);
-        data.append('video_ref', videoName as string)
+        if (thumbnail) data.append('thumbnail', thumbnail);
 
         try {
+            // Complete multipart upload for video
+            await completeMultipartUpload(videoRef, uploadId, parts);
+
+         
+            // Create the database record
             const record = await locals.pb.collection('room_videos_duplicate').create(data);
 
-            // Redirect to the newly created room or a success page
             return { success: true, videoId: record.id, status: 200 };
         } catch (err) {
-            console.error('Error creating video:', err);
-            return fail(400, {
+            console.error('Error creating video entry:', err);
+            return fail(500, {
                 error: true,
-                message: 'Failed to create video',
-                data: Object.fromEntries(formData)  // Use formData instead of data for re-population
+                message: 'Failed to create video entry',
+                data: Object.fromEntries(formData)
             });
+        }
+    },
+
+    deleteVideo: async ({ locals, request }) => {
+        if (!locals.pb.authStore.model?.superuser) {
+            return {
+                success: false,
+                message: 'Unauthorized: Only super users can delete videos',
+                status: 403
+            };
+        }
+        const data = await request.formData();
+        const videoId = data.get('id');
+        const video_ref = data.get('ref');
+        try {
+            await locals.pb.collection('room_videos_duplicate').delete(videoId);
+            const videoPath = join('static/video', `${video_ref}.mp4`);
+            if (existsSync(videoPath)) {
+                await unlink(videoPath);
+            }
+            await deleteObject(video_ref); // Delete the video from R2 storage
+            return { success: true, status: 200 };
+        } catch (err) {
+            console.error('Error deleting video:', err);
+            return fail(400, { error: true, message: 'Failed to delete video' });
         }
     }
 };
