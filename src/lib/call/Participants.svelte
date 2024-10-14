@@ -1,10 +1,11 @@
 <script lang="ts">
     export let participants: any[];
-    import { ShareIcon, MicOff, Mic, UserRoundPlus } from 'lucide-svelte';
+    import { ShareIcon, MicOff, Mic, UserRoundPlus, AudioLines } from 'lucide-svelte';
     import * as Dialog from "$lib/components/ui/dialog";
     import { Button } from '$lib/components/ui/button';
 	import { page } from '$app/stores';
   import Share from '$lib/components/room/share.svelte';
+	import { activeSpeaker } from '$lib/callStores';
 
     export let isHost: boolean;
     export let name: string;
@@ -25,7 +26,7 @@
 
 <div class="max-h-full overflow-y-auto py-4 w-full flex flex-col justify-center px-4 text-white">
 
-
+{#if isHost && hostUser}
     <Dialog.Root>
       <Dialog.Trigger>
           
@@ -38,6 +39,7 @@
           <Share {joinURL} />
       </Dialog.Content>
   </Dialog.Root>
+{/if}
 
     <div class="pt-4">
         <h2>In room</h2>
@@ -69,11 +71,16 @@
         <span class="text-gray-100 text-xs">Demo room host</span>
       {/if}
     </div>
+    <div class="flex flex-row gap-2 items-center">
+    {#if $activeSpeaker === participant.session_id}
+    <AudioLines size={16} class="text-green-500  animate-pulse" />
+    {/if}
     {#if participant.isMuted}
       <MicOff size={16} class="text-gray-400" />
     {:else}
       <Mic size={16} class="text-green-500" />
     {/if}
+    </div>
   </div>
     {/each}
 </div>

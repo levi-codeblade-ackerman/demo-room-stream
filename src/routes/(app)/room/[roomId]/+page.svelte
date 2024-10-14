@@ -5,8 +5,6 @@
     import { goto } from '$app/navigation';
     import { browser } from '$app/environment';
     import VideoTile from '$lib/call/VideoTile.svelte';
-    import WaitingForOthersTile from '$lib/call/WaitingForOthersTile.svelte';
-    import Chat from '$lib/call/Chat.svelte';
     import Loading from '$lib/call/Loading.svelte';
     import PermissionErrorMessage from '$lib/call/PermissionErrorMessage.svelte';
     import { chatMessages, dailyErrorMessage, username, pickerOpen } from '../../../../store';
@@ -14,21 +12,17 @@
     import { toast } from 'svelte-sonner';
     import * as Dialog from "$lib/components/ui/dialog";
     import { Button } from '$lib/components/ui/button';
-    import { Calendar, CircleUser, Quote, ShareIcon, MicOff, Settings, Clapperboard, MessageSquareDashed, SendHorizontal, UsersRound, Mic } from 'lucide-svelte';
+    import { Calendar, CircleUser, Quote, ShareIcon, MicOff, Settings, Clapperboard, MessageSquareDashed, SendHorizontal, UsersRound, Mic, Code } from 'lucide-svelte';
     import CreateQuote from '$lib/components/room/create-quote.svelte';
     import Notes from '$lib/components/room/notes.svelte';
     import ScheduleMeeting from '$lib/components/room/schedule-meeting.svelte';
     import InviteRepresentative from '$lib/components/room/invite-representative.svelte';
     import Share from '$lib/components/room/share.svelte';
-    import { currentVideoUrl } from '$lib/callStores';
+    import { activeSpeaker, currentVideoUrl } from '$lib/callStores';
     import GreetingPopup from '$lib/call/GreetingPopup.svelte';
-    import Controls from '$lib/call/Controls.svelte';
-    import VideoStreamerTile from '$lib/call/VideoStreamerTile.svelte';
-    import { slide } from 'svelte/transition';
-    import { quintOut } from 'svelte/easing';
 	import { playVideoStore } from '$lib/stores/playStore';
-	import { PlayCircle } from 'lucide-svelte';
 	import Participants from '$lib/call/Participants.svelte';
+	import Embed from '$lib/components/room/embed.svelte';
 
     export let data;
 
@@ -40,13 +34,28 @@
     let name = user ? user.name : '';
     let representatives = data.representatives;
     let users = data.users;
+    let roomId = data.roomId;
+    console.log('roomId', roomId);
     
     const host = $page.url.pathname.split('/').pop().split('-').pop();
     console.log('host', host);
     
     const isHost = host === (user ? user.id : '');
+    let videoURL;
 
-    const videoURL = $currentVideoUrl;
+    // Check if currentVideoUrl is set, if not use associated_video from roomId
+    $: {
+         videoURL = $currentVideoUrl || `/static/video${roomId[0].associated_video}`;
+        if (!$currentVideoUrl && roomId[0].associated_video) {
+            currentVideoUrl.set(roomId[0].associated_video); // Set the current video URL from the database
+        }
+        console.log('videoURL', videoURL);
+    }
+
+    // if(!videoURL || videoURL === ''){
+    //     toast('No video stream available');
+    //     goto('/');
+    // }
     
     let callObject;
     let participants = [];
@@ -58,6 +67,7 @@
     let chIsOpen = true;
     let newText = '';
     let globRoomName = '';
+    let isMicMuted = false;
 
     $: {
         console.log('participants list', participants)
@@ -200,11 +210,13 @@
             .on('screen-share-started', handleScreenShareStarted)
             .on('screen-share-stopped', handleScreenShareStopped)
             .on('track-started', updateParticpants)
-            .on('track-stopped', updateParticpants);
+            .on('track-stopped', updateParticpants)
+            .on('active-speaker-change', handleActiveSpeakerChanged);
 
         try {
             await callObject.join();
             dailyErrorMessage.set('');
+            isMicMuted = !callObject.localAudio();
         } catch (e) {
             dailyErrorMessage.set(e);
             toast('Error joining the call');
@@ -219,6 +231,11 @@
     const handleScreenShareStopped = (event) => {
         console.log('Screen share stopped', event);
         updateParticpants(event);
+    };
+
+    const handleActiveSpeakerChanged = (event) => {
+        console.log('Active speaker changed:', event);
+        activeSpeaker.set(event.activeSpeaker.peerId);
     };
 
     onMount(() => {
@@ -300,6 +317,12 @@
         playVideoStore.set(false);  // Reset the video play state
         goto('/');  // Navigate back to the home page
     };
+
+    const toggleMicrophone = () => {
+        if (!callObject) return;
+        isMicMuted = !isMicMuted;
+        callObject.setLocalAudio(!isMicMuted);
+    };
 </script>
 
 <sveltekit:head>
@@ -360,6 +383,16 @@
                         <CreateQuote />
                     </Dialog.Content>
                 </Dialog.Root>
+                <Dialog.Root>
+                    <Dialog.Trigger>
+                        <Button variant="ghost" size="icon" class="w-full hover:bg-red-700">
+                          <Code scale={1.3} color="#fff"/>
+                        </Button>
+                    </Dialog.Trigger>
+                    <Dialog.Content class="rounded-lg bg-transparent">
+                        <Embed roomUrl={joinURL} />
+                    </Dialog.Content>
+                </Dialog.Root>
             </div>
 
             <!-- Main content area  -->
@@ -373,7 +406,7 @@
                 <!-- Video container -->
                 <div class="flex-grow h-full relative">
                     {#each participants as participant}
-                        <VideoTile {callObject} {participant} {screensList} host={isHost} {name} {videoURL} />
+                        <VideoTile {callObject} {participant} {screensList} host={isHost} {name} {roomId} />
                         {#if participant.tracks.screenVideo && participant.tracks.screenVideo.state === 'playable'}
                         {#if !host}
                             <video autoplay playsinline use:srcObject={new MediaStream([participant.tracks.screenVideo.track])}
@@ -457,10 +490,17 @@
 
     <!-- Bottom controls bar -->
     <div class="absolute inset-x-0 bottom-0 h-16 bg-[#666669] w-full flex items-center justify-between px-14">
-        <div class="room-name text-white">{globRoomName}</div>
+        <div class="room-name text-white">{roomId[0].associated_video_name}</div>
         <div class="controls flex items-center gap-3">
-            <button class="flex justify-center items-center rounded-full bg-[#707172] h-10 w-10 hover:bg-white hover:text-black">
-                <MicOff color="#fff" size={24} class="hover:text-black"/>
+            <button 
+                class="flex justify-center items-center rounded-full bg-[#707172] h-10 w-10 hover:bg-white hover:text-black"
+                on:click={toggleMicrophone}
+            >
+                {#if isMicMuted}
+                    <MicOff color="#fff" size={24} class="hover:text-black"/>
+                {:else}
+                    <Mic color="#fff" size={24} class="hover:text-black"/>
+                {/if}
             </button>
             <button class="flex justify-center items-center rounded-full bg-[#707172] h-10 w-10 hover:bg-white hover:text-black">
                 <Settings color="#fff" size={24} class="hover:text-black"/>

@@ -21,12 +21,15 @@ export const actions: Actions = {
     'create-room': async ({ fetch, locals, request }) => {
         const formData = await request.formData();
         const videoUrl = formData.get('videoUrl') as string;
+        const videoName = formData.get('videoName') as string;
 
         console.log('Create room action called');
         const userId = locals.pb.authStore.model.id;
         const exp = Math.round(Date.now() / 1000) + 60 * 60;
+        const meetingName = `meet-${Math.random().toString(36).substring(2, 7)}-${userId}`;
         const options = {
-            name: `meet-${Math.random().toString(36).substring(2, 7)}-${userId}`,properties: {
+            name: meetingName,
+            properties: {
                 exp,
                 enable_chat: true,
             }
@@ -45,12 +48,18 @@ export const actions: Actions = {
             if (res.ok) {
                 const room = await res.json();
                 // Store the videoUrl with the room data
+                await locals.pb.collection('rooms').create({
+                    room_id: meetingName,
+                    associated_video: videoUrl,
+                    associated_video_name: videoName
+                });
                 return {
                     success: true,
                     room: {
                         name: room.name,
                         url: room.url,
                         videoUrl: videoUrl,
+                        videoName: videoName
                         // ... other room data ...
                     }
                 };
