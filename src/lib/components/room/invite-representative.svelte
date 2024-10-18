@@ -3,12 +3,17 @@
     import { toast } from "svelte-sonner";
     import ScheduleMeeting from "./schedule-meeting.svelte";
 	import { enhance } from "$app/forms";
+	import Share from "./share.svelte";
+	import { page } from '$app/stores';
+
 
     export let representatives;
     let showRepresentativeList = false;
     let dialogOpen = false;
     let selectedRepresentative: any = null;
     let inviteConfirmed = false;
+    const joinURL = $page.url.href;
+
     let invitedRepresentative = '';
 
     $: {
@@ -78,13 +83,19 @@
                 <!-- Representatives -->
                 {#each representatives as representative}
                 <div 
-                    class="flex flex-col items-center cursor-pointer"
+                    class="flex flex-col items-center cursor-pointer relative"
                     on:click={() => selectRepresentative(representative)}
                 >
-                    <div class={`w-20 h-20 rounded-full border-2 ${selectedRepresentative === representative ? 'border-green-500' : 'border-gray-300'}`}>
-                        <!-- Add representative image here if available -->
+                    <img 
+                        src={representative.avatar 
+                            ? `${import.meta.env.VITE_POCKETBASE_URL}/api/files/${representative.collectionId}/${representative.id}/${representative.avatar}` 
+                            : `https://ui-avatars.com/api/?name=${encodeURIComponent(representative.name)}&background=random`} 
+                        alt="{representative.name}'s Avatar" 
+                        class="w-24 h-24 rounded-full mb-4 object-cover object-center"
+                    >
+                    <div class={`w-24 h-24 rounded-full border-4 ${selectedRepresentative === representative ? 'border-green-500' : 'border-transparent'} absolute top-0`}>
                     </div>
-                    <span class="mt-2">{representative.name}</span>
+                    <span class="mt-2 text-center">{representative.name}</span>
                 </div>
                 {/each}
             </div>
@@ -92,9 +103,27 @@
                 Welcome to Speak to a Representative. Choosing the right representative can make all the difference in getting the information and guidance you need.
                 <span class="block mt-2 text-xs text-gray-500">Note: Please Choose a Representative</span>
             </p>
+            
             <div class="flex justify-center w-full ">
+                <Dialog.Root>
+                    <Dialog.Trigger>
+                        
+                        <button 
+                        type="submit"
+                        class="px-4 py-2 bg-primary text-white rounded hover:bg-primary-700"
+                        disabled={!selectedRepresentative}
+                    >
+                        CONNECT
+                    </button>
+                 
+                    </Dialog.Trigger>
+                    <Dialog.Content class="p-4 rounded-lg shadow-lg">
+                        <Share {joinURL} representative={true} />
+                    </Dialog.Content>
+                </Dialog.Root>
                
-                <form action="?/send-email" method="POST"
+               
+                <!-- <form action="?/send-email" method="POST"
                     use:enhance={() => {
                         return async ({ result }) => {
                             if (result.ok) {
@@ -118,7 +147,7 @@
                     >
                         CONNECT
                     </button>
-                </form>
+                </form> -->
             </div>
         </div>
     </div>
